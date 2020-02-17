@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"docker-fs/docker"
+
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
@@ -44,7 +46,8 @@ func main() {
 	}
 
 	log.Printf("Fetching content of container %v...", containerId)
-	file, err := FetchContainerArchive(containerId)
+	dockerMng := docker.NewMng(dockerSocketAddr)
+	file, err := dockerMng.FetchContainerArchive(containerId)
 	if err != nil {
 		log.Fatal(err)
 	}
