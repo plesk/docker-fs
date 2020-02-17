@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
+	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
 var (
@@ -58,6 +61,23 @@ func main() {
 		log.Fatalf("Mount failed: %v", err)
 	}
 
+	log.Printf("Setting up signal handler...")
+	osSignalChannel := make(chan os.Signal, 1)
+	signal.Notify(osSignalChannel, syscall.SIGTERM, syscall.SIGINT)
+	go shutdown(server, osSignalChannel)
+
 	log.Printf("OK!")
 	server.Wait()
+	log.Printf("Server finished.")
+}
+
+func shutdown(server *fuse.Server, signals <-chan os.Signal) {
+	<-signals
+	if err := server.Unmount(); err != nil {
+		log.Printf("[WARN] server unmount failed: %v", err)
+		os.Exit(1)
+	}
+
+	log.Printf("Unmount successful.")
+	os.Exit(0)
 }

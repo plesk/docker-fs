@@ -99,7 +99,7 @@ func (r *tarRoot) OnAdd(ctx context.Context) {
 			p.AddChild(base, r.NewPersistentInode(ctx, l, fs.StableAttr{Mode: syscall.S_IFLNK}), false)
 
 		case tar.TypeLink:
-			log.Println("don't know how to handle Typelink")
+			log.Println("don't know how to handle Typelink:", hdr.Name)
 
 		case tar.TypeChar:
 			rf := &fs.MemRegularFile{}
