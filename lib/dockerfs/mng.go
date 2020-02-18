@@ -26,6 +26,8 @@ type Mng struct {
 
 	id string
 
+	inodes *Ino
+
 	staticFiles map[string]os.FileMode
 
 	changes               fsChanges
@@ -40,6 +42,7 @@ func NewMng(containerId string) *Mng {
 		id:                    containerId,
 		dockerAddr:            "/var/run/docker.sock",
 		changesUpdateInterval: 30 * time.Second,
+		inodes:                NewIno(),
 	}
 }
 

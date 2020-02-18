@@ -23,7 +23,7 @@ type Dir struct {
 	fullpath string
 }
 
-func (r *Dir) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+func (d *Dir) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	out.Mode = 0755
 	return 0
 }
@@ -42,11 +42,12 @@ func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.
 	}
 	mode := os.FileMode(uint32(attrs["mode"].(float64)))
 	log.Printf("[DEBUG] Lookup: mode = %o", mode)
+	inode := d.mng.inodes.Inode(filepath.Clean(path))
 	if mode.IsDir() {
-		return d.NewPersistentInode(ctx, &Dir{mng: d.mng, fullpath: path}, fs.StableAttr{Mode: fuse.S_IFDIR}), 0
+		return d.NewPersistentInode(ctx, &Dir{mng: d.mng, fullpath: path}, fs.StableAttr{Mode: fuse.S_IFDIR, Ino: inode}), 0
 	}
 
-	return d.NewPersistentInode(ctx, &File{mng: d.mng, fullpath: path}, fs.StableAttr{}), 0
+	return d.NewPersistentInode(ctx, &File{mng: d.mng, fullpath: path}, fs.StableAttr{Ino: inode}), 0
 }
 
 func (d *Dir) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
@@ -98,9 +99,11 @@ func (d *Dir) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 
 	var list []fuse.DirEntry
 	for child, mode := range children {
+		inode := d.mng.inodes.Inode(filepath.Clean(filepath.Join(d.fullpath, child)))
 		list = append(list, fuse.DirEntry{
 			Mode: mode,
 			Name: child,
+			Ino:  inode,
 		})
 	}
 	return fs.NewListDirStream(list), 0
