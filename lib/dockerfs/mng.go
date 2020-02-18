@@ -126,14 +126,12 @@ func parseContainterContent(file string) (map[string]os.FileMode, error) {
 			// XXX handle error
 			break
 		}
-		if hdr.Typeflag == 'L' {
-			// Don't know what to do with it
-			continue
-		}
 
 		switch hdr.Typeflag {
 		case tar.TypeReg, tar.TypeRegA:
 			result["/"+filepath.Clean(hdr.Name)] = os.FileMode(uint32(hdr.Mode))
+		case tar.TypeDir:
+			// skip empty dirs
 		default:
 			log.Printf("Don't know how to handle file of type %v: %q. Skipping.", hdr.Typeflag, hdr.Name)
 		}
