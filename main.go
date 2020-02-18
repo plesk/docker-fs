@@ -1,14 +1,13 @@
 package main
 
 import (
+	"docker-fs/lib/dockerfs"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
-
-	"docker-fs/docker"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -46,17 +45,12 @@ func main() {
 	}
 
 	log.Printf("Fetching content of container %v...", containerId)
-	dockerMng := docker.NewMng(dockerSocketAddr)
-	file, err := dockerMng.FetchContainerArchive(containerId)
-	if err != nil {
-		log.Fatal(err)
+	dockerMng := dockerfs.NewMng(containerId)
+	if err := dockerMng.Init(); err != nil {
+		log.Fatalf("dockerMng.Init() failed: %v", err)
 	}
 
-	log.Printf("Creating FS tree from archive (%v)...", file)
-	root, err := NewTarTree(file)
-	if err != nil {
-		log.Fatal(err)
-	}
+	root := dockerMng.Root()
 
 	log.Printf("Mounting FS to %v...", mountPoint)
 	server, err := fs.Mount(mountPoint, root, &fs.Options{})

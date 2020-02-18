@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 )
@@ -25,12 +27,19 @@ type Mng struct {
 	id string
 
 	staticFiles map[string]os.FileMode
+
+	changes               fsChanges
+	changesUpdated        time.Time
+	changesUpdateInterval time.Duration
+	// TODO replace with RWMutex
+	changesMutex sync.Mutex
 }
 
 func NewMng(containerId string) *Mng {
 	return &Mng{
-		id:         containerId,
-		dockerAddr: "/var/run/docker.sock",
+		id:                    containerId,
+		dockerAddr:            "/var/run/docker.sock",
+		changesUpdateInterval: 30 * time.Second,
 	}
 }
 
@@ -48,7 +57,7 @@ func (m *Mng) Init() error {
 }
 
 func (m *Mng) Root() fs.InodeEmbedder {
-	return &LittleDir{
+	return &Dir{
 		mng:      m,
 		fullpath: "/",
 	}
@@ -164,4 +173,55 @@ func (m *Mng) getFileArchive(path string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("Unexpected status code on GET %q (expected 200 OK): %v", url, http.StatusText(resp.StatusCode))
 	}
 	return resp.Body, nil
+}
+
+func (m *Mng) ChangesInDir(dir string) (result fsChanges, err error) {
+	m.changesMutex.Lock()
+	defer m.changesMutex.Unlock()
+	if m.changes == nil || time.Now().After(m.changesUpdated.Add(m.changesUpdateInterval)) {
+		err = m.fetchFsChanges()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	dir = filepath.Clean(dir)
+	for _, change := range m.changes {
+		// let's skip modified files for now
+		if change.Kind == FileModified {
+			continue
+		}
+		if filepath.Clean(filepath.Dir(change.Path)) != dir {
+			// Not a direct child
+			continue
+		}
+		data, err := m.getRawAttrs(change.Path)
+		if err != nil {
+			log.Printf("[ERR] Failed to get raw attrs of %q: %v", change.Path, err)
+			continue
+		}
+		change.mode = uint32(data["mode"].(float64))
+		result = append(result, change)
+	}
+	return fsChanges(result), nil
+}
+
+func (m *Mng) fetchFsChanges() error {
+	resp, err := m.unixc.Get("http://unix/containers/" + m.id + "/changes")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Unexpected status code (expected 200 OK): %v", http.StatusText(resp.StatusCode))
+	}
+
+	changes := fsChanges([]fsChange{})
+	if err := json.NewDecoder(resp.Body).Decode(&changes); err != nil {
+		return err
+	}
+	m.changes = changes
+	m.changesUpdated = time.Now()
+	return nil
 }

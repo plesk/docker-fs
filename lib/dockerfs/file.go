@@ -65,6 +65,6 @@ func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 		log.Printf("get raw attrs on %q failed: %v", f.fullpath, err)
 		return syscall.EIO
 	}
-	out.Size = uint64(attrs["size"].(int64))
+	out.Size = uint64(attrs["size"].(float64))
 	return 0
 }
