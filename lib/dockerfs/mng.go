@@ -53,7 +53,14 @@ func (m *Mng) Init() error {
 		},
 	}
 
-	return nil
+	log.Printf("[DEBUG] fetching container content...")
+	archPath, err := m.fetchContainerArchive()
+	if err != nil {
+		return err
+	}
+	log.Printf("[DEBUG] parse container content...")
+	m.staticFiles, err = parseContainterContent(archPath)
+	return err
 }
 
 func (m *Mng) Root() fs.InodeEmbedder {
@@ -126,7 +133,7 @@ func parseContainterContent(file string) (map[string]os.FileMode, error) {
 
 		switch hdr.Typeflag {
 		case tar.TypeReg, tar.TypeRegA:
-			result[filepath.Clean(hdr.Name)] = os.FileMode(uint32(hdr.Mode))
+			result["/"+filepath.Clean(hdr.Name)] = os.FileMode(uint32(hdr.Mode))
 		default:
 			log.Printf("Don't know how to handle file of type %v: %q. Skipping.", hdr.Typeflag, hdr.Name)
 		}
