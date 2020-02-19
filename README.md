@@ -29,12 +29,16 @@ Inspect `./mnt` content with `cd`, `ls`, `cat`, `mc` or any file manager you pre
 
 To unmount directory interrupt running `docker-fs` process with `CTRL+C`.
 
+(You can also unmount directory with command `fusermount -u $(pwd)/mnt`.)
+
 # Technical details and limitations.
 
 - `docker-fs` works via docker API, so it can work with either local or remote docker servers.
 (currently only local docker through unix-socket is implemented).
 
 - File system is implemented using [GO-FUSE](https://github.com/hanwen/go-fuse) library which implements FUSE (File systems in USEr space) protocol.
+
+- Due to previous point (FUSE) `docker-fs` works on Linux, should work on MacOS, and possibly works somehow in WSL on Windows.
 
 - Currently docker-fs supports only READ operations over mounted FS. But docker API allows modification on files so possibly it will be made in future.
 
