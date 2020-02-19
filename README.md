@@ -31,7 +31,7 @@ To unmount directory interrupt running `docker-fs` process with `CTRL+C`.
 
 (You can also unmount directory with command `fusermount -u $(pwd)/mnt`.)
 
-# Technical details and limitations.
+## Technical details and limitations.
 
 - `docker-fs` works via docker API, so it can work with either local or remote docker servers.
 (currently only local docker through unix-socket is implemented).
@@ -46,6 +46,6 @@ To unmount directory interrupt running `docker-fs` process with `CTRL+C`.
 
 - Empty directories are not shown due to current implementation.
 
-# TODO
+## TODO
 
 - Fix ussie with newly added directories.
