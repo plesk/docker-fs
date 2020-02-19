@@ -36,12 +36,19 @@ func main() {
 
 	if containerId == "" {
 		fmt.Fprintf(os.Stderr, "Container id is not specified.\n")
+		flag.Usage()
 		os.Exit(2)
 	}
 
 	if mountPoint == "" {
 		fmt.Fprintf(os.Stderr, "Mount point is not specified.\n")
+		flag.Usage()
 		os.Exit(2)
+	}
+
+	log.Printf("Check if mount directory exists (%v)...", mountPoint)
+	if err := os.MkdirAll(mountPoint, 0755); err != nil {
+		log.Fatal(err)
 	}
 
 	log.Printf("Fetching content of container %v...", containerId)
