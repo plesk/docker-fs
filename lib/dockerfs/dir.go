@@ -42,8 +42,17 @@ func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.
 		return nil, syscall.EIO
 	}
 	mode := os.FileMode(uint32(attrs["mode"].(float64)))
-	log.Printf("[DEBUG] Lookup: mode = %o", mode)
+	log.Printf("[DEBUG] (%s) Lookup(%s): mode = %o", d.fullpath, name, mode)
 	inode := d.mng.inodes.Inode(filepath.Clean(path))
+	if (mode & os.ModeSymlink) != 0 {
+		linkTarget, ok := attrs["linkTarget"].(string)
+		if !ok {
+			log.Printf("linkTarget not found for %q", path)
+			return nil, syscall.EIO
+		}
+		return d.NewPersistentInode(ctx, &fs.MemSymlink{Data: []byte(linkTarget)}, fs.StableAttr{Mode: fuse.S_IFLNK, Ino: inode}), 0
+	}
+
 	if mode.IsDir() {
 		return d.NewPersistentInode(ctx, &Dir{mng: d.mng, fullpath: path}, fs.StableAttr{Mode: fuse.S_IFDIR, Ino: inode}), 0
 	}
@@ -81,7 +90,11 @@ func (d *Dir) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 			children[sub[:pos]] = fuse.S_IFDIR
 		} else if pos < 0 {
 			log.Printf("[DEBUG] Readdir (2): children[%v] = %o", sub, uint32(mode))
-			children[sub] = fuse.S_IFREG
+			if (mode & fuse.S_IFLNK) == fuse.S_IFLNK {
+				children[sub] = fuse.S_IFLNK
+			} else {
+				children[sub] = fuse.S_IFREG
+			}
 		}
 	}
 

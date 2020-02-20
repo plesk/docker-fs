@@ -42,7 +42,7 @@ To unmount directory interrupt running `docker-fs` process with `CTRL+C`.
 
 - Currently docker-fs supports only READ operations over mounted FS. But docker API allows modification on files so possibly it will be made in future.
 
-- Directories and regular files are well supported. Other types (i.e. symlinks) support is in progress.
+- Directories, regular files and symlinks are well supported. Other types support is in progress.
 
 - Empty directories are not shown due to current implementation.
 

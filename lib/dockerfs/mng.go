@@ -123,7 +123,7 @@ func parseContainterContent(file string) (map[string]os.FileMode, error) {
 		}
 
 		switch hdr.Typeflag {
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg, tar.TypeRegA, tar.TypeSymlink:
 			result["/"+filepath.Clean(hdr.Name)] = os.FileMode(uint32(hdr.Mode))
 		case tar.TypeDir:
 			// skip empty dirs
