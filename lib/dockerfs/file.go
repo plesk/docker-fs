@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"syscall"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -69,5 +70,19 @@ func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 	out.Mode = uint32(attrs["mode"].(float64)) & 07777
 	out.Nlink = 1
 	out.Size = uint64(attrs["size"].(float64))
+	mtime, ok := attrs["mtime"].(string)
+	if ok {
+		modTime, err := parseAttrTime(mtime)
+		if err != nil {
+			log.Printf("parsing mtime failed: %q, %v", mtime, err)
+		} else {
+			out.SetTimes(nil, &modTime, nil)
+		}
+
+	}
 	return 0
+}
+
+func parseAttrTime(str string) (time.Time, error) {
+	return time.Parse(time.RFC3339Nano, str)
 }

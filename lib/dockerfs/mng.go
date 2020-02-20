@@ -56,6 +56,7 @@ func (m *Mng) Init() (err error) {
 	if err != nil {
 		return err
 	}
+	defer os.Remove(archPath)
 	log.Printf("[DEBUG] parse container content...")
 	m.staticFiles, err = parseContainterContent(archPath)
 	return err
