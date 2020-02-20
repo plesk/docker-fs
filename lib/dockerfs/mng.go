@@ -2,15 +2,12 @@ package dockerfs
 
 import (
 	"archive/tar"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,7 +19,7 @@ import (
 
 type Mng struct {
 	dockerAddr string
-	unixc      *http.Client
+	httpc      httpClient
 
 	id string
 
@@ -40,20 +37,18 @@ type Mng struct {
 func NewMng(containerId string) *Mng {
 	return &Mng{
 		id:                    containerId,
-		dockerAddr:            "/var/run/docker.sock",
+		dockerAddr:            "unix:/var/run/docker.sock",
 		changesUpdateInterval: 30 * time.Second,
 		inodes:                NewIno(),
 	}
 }
 
-func (m *Mng) Init() error {
-	m.unixc = &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				dialer := net.Dialer{}
-				return dialer.DialContext(ctx, "unix", m.dockerAddr)
-			},
-		},
+func (m *Mng) Init() (err error) {
+	if m.httpc == nil {
+		m.httpc, err = NewClient(m.dockerAddr)
+		if err != nil {
+			return err
+		}
 	}
 
 	log.Printf("[DEBUG] fetching container content...")
@@ -75,15 +70,12 @@ func (m *Mng) Root() fs.InodeEmbedder {
 
 // Fetch container archive and return path to tar-file.
 func (m *Mng) fetchContainerArchive() (path string, err error) {
-	resp, err := m.unixc.Get("http://unix/containers/" + m.id + "/export")
+	resp, err := m.httpc.Get("/containers/" + m.id + "/export")
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Unexpected status code (expected 200 OK): %v", http.StatusText(resp.StatusCode))
-	}
 	output, err := prepareOutputFile(m.id)
 	defer output.Close()
 
@@ -142,19 +134,11 @@ func parseContainterContent(file string) (map[string]os.FileMode, error) {
 	return result, nil
 }
 
-var ErrorNotFound = errors.New("Not found")
-
 func (m *Mng) getRawAttrs(path string) (map[string]interface{}, error) {
-	url := "http://unix/containers/" + m.id + "/archive?path=" + path
-	resp, err := m.unixc.Head(url)
+	url := "/containers/" + m.id + "/archive?path=" + path
+	resp, err := m.httpc.Head(url)
 	if err != nil {
 		return nil, fmt.Errorf("Head request to %q failed: %w", url, err)
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrorNotFound
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Unexpected status code on GET %q (expected 200 OK): %v", url, http.StatusText(resp.StatusCode))
 	}
 	stat := resp.Header.Get("X-Docker-Container-Path-Stat")
 	if stat == "" {
@@ -169,16 +153,10 @@ func (m *Mng) getRawAttrs(path string) (map[string]interface{}, error) {
 }
 
 func (m *Mng) getFileArchive(path string) (io.ReadCloser, error) {
-	url := "http://unix/containers/" + m.id + "/archive?path=" + path
-	resp, err := m.unixc.Get(url)
+	url := "/containers/" + m.id + "/archive?path=" + path
+	resp, err := m.httpc.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("Head request to %q failed: %w", url, err)
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrorNotFound
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Unexpected status code on GET %q (expected 200 OK): %v", url, http.StatusText(resp.StatusCode))
 	}
 	return resp.Body, nil
 }
@@ -205,7 +183,9 @@ func (m *Mng) ChangesInDir(dir string) (result fsChanges, err error) {
 		}
 		data, err := m.getRawAttrs(change.Path)
 		if err != nil {
-			log.Printf("[ERR] Failed to get raw attrs of %q: %v", change.Path, err)
+			if !errors.As(err, &ErrorNotFound{}) {
+				log.Printf("[ERR] Failed to get raw attrs of %q: %v", change.Path, err)
+			}
 			continue
 		}
 		change.mode = uint32(data["mode"].(float64))
@@ -215,15 +195,11 @@ func (m *Mng) ChangesInDir(dir string) (result fsChanges, err error) {
 }
 
 func (m *Mng) fetchFsChanges() error {
-	resp, err := m.unixc.Get("http://unix/containers/" + m.id + "/changes")
+	resp, err := m.httpc.Get("/containers/" + m.id + "/changes")
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Unexpected status code (expected 200 OK): %v", http.StatusText(resp.StatusCode))
-	}
 
 	changes := fsChanges([]fsChange{})
 	if err := json.NewDecoder(resp.Body).Decode(&changes); err != nil {

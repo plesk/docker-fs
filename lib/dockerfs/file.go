@@ -3,6 +3,7 @@ package dockerfs
 import (
 	"archive/tar"
 	"context"
+	"errors"
 	"io/ioutil"
 	"log"
 	"syscall"
@@ -25,7 +26,7 @@ type File struct {
 
 func (f *File) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
 	reader, err := f.mng.getFileArchive(f.fullpath)
-	if err == ErrorNotFound {
+	if errors.As(err, &ErrorNotFound{}) {
 		return nil, 0, syscall.ENOENT
 	}
 	if err != nil {
@@ -58,7 +59,7 @@ func (f *File) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int6
 
 func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	attrs, err := f.mng.getRawAttrs(f.fullpath)
-	if err == ErrorNotFound {
+	if errors.As(err, &ErrorNotFound{}) {
 		return syscall.ENOENT
 	}
 	if err != nil {

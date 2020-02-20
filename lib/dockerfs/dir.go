@@ -2,6 +2,7 @@ package dockerfs
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -33,7 +34,7 @@ func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.
 	path := filepath.Join(d.fullpath, name)
 
 	attrs, err := d.mng.getRawAttrs(path)
-	if err == ErrorNotFound {
+	if errors.As(err, &ErrorNotFound{}) {
 		return nil, syscall.ENOENT
 	}
 	if err != nil {
