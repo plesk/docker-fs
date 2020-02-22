@@ -38,18 +38,14 @@ func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.
 		return nil, syscall.ENOENT
 	}
 	if err != nil {
-		log.Printf("Failed to get raw attrs: %v", err)
+		log.Printf("Failed to get raw attrs: %v, (%T)", err, err)
 		return nil, syscall.EIO
 	}
-	mode := os.FileMode(uint32(attrs["mode"].(float64)))
+	mode := attrs.Mode
 	log.Printf("[DEBUG] (%s) Lookup(%s): mode = %o", d.fullpath, name, mode)
 	inode := d.mng.inodes.Inode(filepath.Clean(path))
 	if (mode & os.ModeSymlink) != 0 {
-		linkTarget, ok := attrs["linkTarget"].(string)
-		if !ok {
-			log.Printf("linkTarget not found for %q", path)
-			return nil, syscall.EIO
-		}
+		linkTarget := attrs.LinkTarget
 		return d.NewPersistentInode(ctx, &fs.MemSymlink{Data: []byte(linkTarget)}, fs.StableAttr{Mode: fuse.S_IFLNK, Ino: inode}), 0
 	}
 

@@ -135,7 +135,7 @@ func parseContainterContent(file string) (map[string]os.FileMode, error) {
 	return result, nil
 }
 
-func (m *Mng) getRawAttrs(path string) (map[string]interface{}, error) {
+func (m *Mng) getRawAttrs(path string) (*ContainerPathStat, error) {
 	url := "/containers/" + m.id + "/archive?path=" + path
 	resp, err := m.httpc.Head(url)
 	if err != nil {
@@ -145,10 +145,10 @@ func (m *Mng) getRawAttrs(path string) (map[string]interface{}, error) {
 	if stat == "" {
 		return nil, fmt.Errorf("X-Docker-Container-Path-Stat header not found")
 	}
-	data := make(map[string]interface{})
-	err = json.NewDecoder(base64.NewDecoder(base64.StdEncoding, strings.NewReader(stat))).Decode(&data)
+	data := new(ContainerPathStat)
+	err = json.NewDecoder(base64.NewDecoder(base64.StdEncoding, strings.NewReader(stat))).Decode(data)
 	if err != nil {
-		return nil, fmt.Errorf("Decoding failed: %w, %v", stat, err)
+		return nil, fmt.Errorf("Decoding failed: %q, %w", stat, err)
 	}
 	return data, nil
 }
@@ -182,14 +182,14 @@ func (m *Mng) ChangesInDir(dir string) (result fsChanges, err error) {
 			// Not a direct child
 			continue
 		}
-		data, err := m.getRawAttrs(change.Path)
+		stat, err := m.getRawAttrs(change.Path)
 		if err != nil {
 			if !errors.As(err, &ErrorNotFound{}) {
 				log.Printf("[ERR] Failed to get raw attrs of %q: %v", change.Path, err)
 			}
 			continue
 		}
-		change.mode = uint32(data["mode"].(float64))
+		change.mode = uint32(stat.Mode)
 		result = append(result, change)
 	}
 	return fsChanges(result), nil

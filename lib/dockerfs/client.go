@@ -14,19 +14,19 @@ type httpClient interface {
 	Head(string) (*http.Response, error)
 }
 
-var _ = httpClient((*client)(nil))
+var _ = httpClient((*clientImpl)(nil))
 
-type client struct {
+type clientImpl struct {
 	addr string
 	cl   *http.Client
 }
 
-func NewClient(addr string) (*client, error) {
+func NewClient(addr string) (*clientImpl, error) {
 	unixPrefix := "unix:"
 	if strings.HasPrefix(addr, unixPrefix) {
 		addr = addr[len(unixPrefix):]
 		log.Printf("httpClient: using unix socket %q", addr)
-		return &client{
+		return &clientImpl{
 			addr: "http://unix",
 			cl: &http.Client{
 				Transport: &http.Transport{
@@ -41,12 +41,12 @@ func NewClient(addr string) (*client, error) {
 	return nil, fmt.Errorf("Unsupported protocol for address: %q", addr)
 }
 
-func (c *client) Get(url string) (*http.Response, error) {
+func (c *clientImpl) Get(url string) (*http.Response, error) {
 	resp, err := c.cl.Get(c.addr + url)
 	return checkResponse(http.MethodGet, url, resp, err)
 }
 
-func (c *client) Head(url string) (*http.Response, error) {
+func (c *clientImpl) Head(url string) (*http.Response, error) {
 	resp, err := c.cl.Head(c.addr + url)
 	return checkResponse(http.MethodHead, url, resp, err)
 }

@@ -64,22 +64,13 @@ func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 		return syscall.ENOENT
 	}
 	if err != nil {
-		log.Printf("get raw attrs on %q failed: %v", f.fullpath, err)
+		log.Printf("get raw attrs on %q failed: %v (%T)", f.fullpath, err, err)
 		return syscall.EIO
 	}
-	out.Mode = uint32(attrs["mode"].(float64)) & 07777
+	out.Mode = uint32(attrs.Mode) & 07777
 	out.Nlink = 1
-	out.Size = uint64(attrs["size"].(float64))
-	mtime, ok := attrs["mtime"].(string)
-	if ok {
-		modTime, err := parseAttrTime(mtime)
-		if err != nil {
-			log.Printf("parsing mtime failed: %q, %v", mtime, err)
-		} else {
-			out.SetTimes(nil, &modTime, nil)
-		}
-
-	}
+	out.Size = uint64(attrs.Size)
+	out.SetTimes(nil, &attrs.Mtime, nil)
 	return 0
 }
 
