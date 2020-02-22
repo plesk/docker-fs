@@ -15,17 +15,23 @@ import (
 
 var _ = (fs.NodeOpener)((*File)(nil))
 var _ = (fs.NodeReader)((*File)(nil))
+var _ = (fs.NodeWriter)((*File)(nil))
 var _ = (fs.NodeGetattrer)((*File)(nil))
+var _ = (fs.NodeFlusher)((*File)(nil))
+var _ = (fs.NodeFsyncer)((*File)(nil))
 
 type File struct {
 	fs.Inode
 	mng *Mng
 
-	fullpath string
-	data     []byte
+	fullpath    string
+	data        []byte
+	read, write bool
+	pos         int64
 }
 
 func (f *File) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+	// Fetch file content
 	reader, err := f.mng.getFileArchive(f.fullpath)
 	if errors.As(err, &ErrorNotFound{}) {
 		return nil, 0, syscall.ENOENT
@@ -46,6 +52,20 @@ func (f *File) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 		return nil, 0, syscall.EIO
 	}
 	f.data = data
+
+	// check flags
+	if (flags&syscall.O_RDONLY) == syscall.O_RDONLY || (flags&syscall.O_RDWR) == syscall.O_RDWR {
+		f.read = true
+	}
+	if (flags&syscall.O_WRONLY) == syscall.O_WRONLY || (flags&syscall.O_RDWR) == syscall.O_RDWR {
+		f.write = true
+	}
+	if (flags & syscall.O_APPEND) == syscall.O_APPEND {
+		f.pos = int64(len(f.data))
+	}
+	if (flags & syscall.O_TRUNC) == syscall.O_TRUNC {
+		f.data = f.data[:0]
+	}
 	return nil, 0, 0
 }
 
@@ -76,4 +96,44 @@ func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 
 func parseAttrTime(str string) (time.Time, error) {
 	return time.Parse(time.RFC3339Nano, str)
+}
+
+func (f *File) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int64) (uint32, syscall.Errno) {
+	if !f.write {
+		return 0, syscall.EBADF
+	}
+
+	off += f.pos
+
+	// f.mu.Lock()
+	// defer f.mu.Unlock()
+	end := int64(len(data)) + off
+	if int64(len(f.data)) < end {
+		n := make([]byte, end)
+		copy(n, f.data)
+		f.data = n
+	}
+
+	copy(f.data[off:off+int64(len(data))], data)
+
+	return uint32(len(data)), 0
+}
+
+func (f *File) Flush(ctx context.Context, fh fs.FileHandle) (res syscall.Errno) {
+	defer log.Printf("[DEBUG] (%v) Flush() = %v", f.fullpath, res)
+	if err := f.mng.saveFile(f.fullpath, f.data); err != nil {
+		log.Printf("Failed to save file: %v", err)
+		return syscall.EIO
+	}
+	return 0
+}
+
+func (f *File) Fsync(ctx context.Context, fh fs.FileHandle, flags uint32) (res syscall.Errno) {
+	defer log.Printf("[DEBUG] (%v) Fsync() = %v", f.fullpath, res)
+	if err := f.mng.saveFile(f.fullpath, f.data); err != nil {
+		log.Printf("Failed to save file: %v", err)
+		return syscall.EIO
+	}
+	// Maybe reset read/write flags?
+	return 0
 }

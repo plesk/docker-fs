@@ -2,12 +2,14 @@ package dockerfs
 
 import (
 	"archive/tar"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,7 +40,7 @@ func NewMng(containerId string) *Mng {
 	return &Mng{
 		id:                    containerId,
 		dockerAddr:            "unix:/var/run/docker.sock",
-		changesUpdateInterval: 30 * time.Second,
+		changesUpdateInterval: 1 * time.Second,
 		inodes:                NewIno(),
 	}
 }
@@ -209,4 +211,27 @@ func (m *Mng) fetchFsChanges() error {
 	m.changes = changes
 	m.changesUpdated = time.Now()
 	return nil
+}
+
+func (m *Mng) saveFile(path string, data []byte) error {
+	var buffer bytes.Buffer
+	writer := tar.NewWriter(&buffer)
+	dir, name := filepath.Split(path)
+	hdr := &tar.Header{
+		Name: name,
+		Size: int64(len(data)),
+	}
+	if err := writer.WriteHeader(hdr); err != nil {
+		return err
+	}
+	if _, err := writer.Write(data); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	url := "/containers/" + m.id + "/archive?path=" + dir
+	_, err := m.httpc.Put(url, http.DetectContentType(data), bytes.NewBuffer(data))
+	return err
 }

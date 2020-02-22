@@ -3,6 +3,7 @@ package dockerfs
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 type httpClient interface {
 	Get(string) (*http.Response, error)
 	Head(string) (*http.Response, error)
+	Put(url, contentType string, body io.Reader) (resp *http.Response, err error)
 }
 
 var _ = httpClient((*clientImpl)(nil))
@@ -49,6 +51,15 @@ func (c *clientImpl) Get(url string) (*http.Response, error) {
 func (c *clientImpl) Head(url string) (*http.Response, error) {
 	resp, err := c.cl.Head(c.addr + url)
 	return checkResponse(http.MethodHead, url, resp, err)
+}
+
+func (c *clientImpl) Put(url, contentType string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPut, c.addr+url, body)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.cl.Do(req)
+	return checkResponse(http.MethodPut, url, resp, err)
 }
 
 func checkResponse(method, url string, resp *http.Response, err error) (*http.Response, error) {
