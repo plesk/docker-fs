@@ -25,6 +25,8 @@ type Dir struct {
 }
 
 func (d *Dir) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	out.Owner.Uid = d.mng.uid
+	out.Owner.Gid = d.mng.gid
 	out.Mode = 0755
 	return 0
 }
@@ -43,6 +45,9 @@ func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.
 	}
 	mode := attrs.Mode
 	log.Printf("[DEBUG] (%s) Lookup(%s): mode = %o", d.fullpath, name, mode)
+
+	out.Owner.Uid, out.Owner.Gid = d.mng.uid, d.mng.gid
+
 	inode := d.mng.inodes.Inode(filepath.Clean(path))
 	if (mode & os.ModeSymlink) != 0 {
 		linkTarget := attrs.LinkTarget

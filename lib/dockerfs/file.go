@@ -91,6 +91,8 @@ func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 	out.Nlink = 1
 	out.Size = uint64(attrs.Size)
 	out.SetTimes(nil, &attrs.Mtime, nil)
+
+	out.Owner.Uid, out.Owner.Gid = f.mng.uid, f.mng.gid
 	return 0
 }
 

@@ -34,6 +34,9 @@ type Mng struct {
 	changesUpdateInterval time.Duration
 	// TODO replace with RWMutex
 	changesMutex sync.Mutex
+
+	// current user uid, gid
+	uid, gid uint32
 }
 
 func NewMng(containerId string) *Mng {
@@ -42,6 +45,8 @@ func NewMng(containerId string) *Mng {
 		dockerAddr:            "unix:/var/run/docker.sock",
 		changesUpdateInterval: 1 * time.Second,
 		inodes:                NewIno(),
+		uid:                   uint32(os.Getuid()),
+		gid:                   uint32(os.Getgid()),
 	}
 }
 
@@ -232,6 +237,6 @@ func (m *Mng) saveFile(path string, data []byte) error {
 	}
 
 	url := "/containers/" + m.id + "/archive?path=" + dir
-	_, err := m.httpc.Put(url, http.DetectContentType(data), bytes.NewBuffer(data))
+	_, err := m.httpc.Put(url, http.DetectContentType(buffer.Bytes()), &buffer)
 	return err
 }

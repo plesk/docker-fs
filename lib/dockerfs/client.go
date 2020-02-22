@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -71,8 +72,9 @@ func checkResponse(method, url string, resp *http.Response, err error) (*http.Re
 		return nil, ErrorNotFound{}
 	}
 	if resp.StatusCode != http.StatusOK {
+		msg, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("Unexpected status code on %v %q (expected 200 OK): %v", method, url, http.StatusText(resp.StatusCode))
+		return nil, fmt.Errorf("Unexpected status code on %v %q (expected 200 OK): %v (%s)", method, url, http.StatusText(resp.StatusCode), msg)
 	}
 	return resp, nil
 }
