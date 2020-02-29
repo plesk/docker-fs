@@ -2,17 +2,12 @@ package dockerfs
 
 import (
 	"archive/tar"
-	"bytes"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,7 +16,7 @@ import (
 
 type Mng struct {
 	dockerAddr string
-	httpc      httpClient
+	docker     dockerMng
 
 	id string
 
@@ -29,7 +24,7 @@ type Mng struct {
 
 	staticFiles map[string]os.FileMode
 
-	changes               fsChanges
+	changes               FsChanges
 	changesUpdated        time.Time
 	changesUpdateInterval time.Duration
 	// TODO replace with RWMutex
@@ -51,11 +46,12 @@ func NewMng(containerId string) *Mng {
 }
 
 func (m *Mng) Init() (err error) {
-	if m.httpc == nil {
-		m.httpc, err = NewClient(m.dockerAddr)
+	if m.docker == nil {
+		httpc, err := NewClient(m.dockerAddr)
 		if err != nil {
 			return err
 		}
+		m.docker = NewDockerMng(httpc, m.id)
 	}
 
 	log.Printf("[DEBUG] fetching container content...")
@@ -78,11 +74,11 @@ func (m *Mng) Root() fs.InodeEmbedder {
 
 // Fetch container archive and return path to tar-file.
 func (m *Mng) fetchContainerArchive() (path string, err error) {
-	resp, err := m.httpc.Get("/containers/" + m.id + "/export")
+	respBody, err := m.docker.ContainerExport()
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer respBody.Close()
 
 	output, err := prepareOutputFile(m.id)
 	defer output.Close()
@@ -90,7 +86,7 @@ func (m *Mng) fetchContainerArchive() (path string, err error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(output, resp.Body); err != nil {
+	if _, err := io.Copy(output, respBody); err != nil {
 		return "", err
 	}
 	return output.Name(), nil
@@ -142,41 +138,16 @@ func parseContainterContent(file string) (map[string]os.FileMode, error) {
 	return result, nil
 }
 
-func (m *Mng) getRawAttrs(path string) (*ContainerPathStat, error) {
-	url := "/containers/" + m.id + "/archive?path=" + path
-	resp, err := m.httpc.Head(url)
-	if err != nil {
-		return nil, fmt.Errorf("Head request to %q failed: %w", url, err)
-	}
-	stat := resp.Header.Get("X-Docker-Container-Path-Stat")
-	if stat == "" {
-		return nil, fmt.Errorf("X-Docker-Container-Path-Stat header not found")
-	}
-	data := new(ContainerPathStat)
-	err = json.NewDecoder(base64.NewDecoder(base64.StdEncoding, strings.NewReader(stat))).Decode(data)
-	if err != nil {
-		return nil, fmt.Errorf("Decoding failed: %q, %w", stat, err)
-	}
-	return data, nil
-}
-
-func (m *Mng) getFileArchive(path string) (io.ReadCloser, error) {
-	url := "/containers/" + m.id + "/archive?path=" + path
-	resp, err := m.httpc.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("Head request to %q failed: %w", url, err)
-	}
-	return resp.Body, nil
-}
-
-func (m *Mng) ChangesInDir(dir string) (result fsChanges, err error) {
+func (m *Mng) ChangesInDir(dir string) (result FsChanges, err error) {
 	m.changesMutex.Lock()
 	defer m.changesMutex.Unlock()
 	if m.changes == nil || time.Now().After(m.changesUpdated.Add(m.changesUpdateInterval)) {
-		err = m.fetchFsChanges()
+		changes, err := m.docker.GetFsChanges()
 		if err != nil {
 			return nil, err
 		}
+		m.changes = changes
+		m.changesUpdated = time.Now()
 	}
 
 	dir = filepath.Clean(dir)
@@ -189,7 +160,7 @@ func (m *Mng) ChangesInDir(dir string) (result fsChanges, err error) {
 			// Not a direct child
 			continue
 		}
-		stat, err := m.getRawAttrs(change.Path)
+		stat, err := m.docker.GetPathAttrs(change.Path)
 		if err != nil {
 			if !errors.As(err, &ErrorNotFound{}) {
 				log.Printf("[ERR] Failed to get raw attrs of %q: %v", change.Path, err)
@@ -199,44 +170,5 @@ func (m *Mng) ChangesInDir(dir string) (result fsChanges, err error) {
 		change.mode = uint32(stat.Mode)
 		result = append(result, change)
 	}
-	return fsChanges(result), nil
-}
-
-func (m *Mng) fetchFsChanges() error {
-	resp, err := m.httpc.Get("/containers/" + m.id + "/changes")
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	changes := fsChanges([]fsChange{})
-	if err := json.NewDecoder(resp.Body).Decode(&changes); err != nil {
-		return err
-	}
-	m.changes = changes
-	m.changesUpdated = time.Now()
-	return nil
-}
-
-func (m *Mng) saveFile(path string, data []byte) error {
-	var buffer bytes.Buffer
-	writer := tar.NewWriter(&buffer)
-	dir, name := filepath.Split(path)
-	hdr := &tar.Header{
-		Name: name,
-		Size: int64(len(data)),
-	}
-	if err := writer.WriteHeader(hdr); err != nil {
-		return err
-	}
-	if _, err := writer.Write(data); err != nil {
-		return err
-	}
-	if err := writer.Close(); err != nil {
-		return err
-	}
-
-	url := "/containers/" + m.id + "/archive?path=" + dir
-	_, err := m.httpc.Put(url, http.DetectContentType(buffer.Bytes()), &buffer)
-	return err
+	return FsChanges(result), nil
 }

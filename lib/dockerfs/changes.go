@@ -2,9 +2,9 @@ package dockerfs
 
 import "fmt"
 
-type fsChanges []fsChange
+type FsChanges []FsChange
 
-func (c fsChanges) WasRemoved(path string) bool {
+func (c FsChanges) WasRemoved(path string) bool {
 	for _, ch := range c {
 		if ch.Path == path && ch.Kind == FileRemoved {
 			return true
@@ -13,7 +13,7 @@ func (c fsChanges) WasRemoved(path string) bool {
 	return false
 }
 
-type fsChange struct {
+type FsChange struct {
 	Path string       `json:"Path"`
 	Kind FsChangeKind `json:"Kind"`
 

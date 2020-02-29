@@ -35,7 +35,7 @@ func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.
 	log.Printf("[DEBUG] (%s) Lookup(%s)...", d.fullpath, name)
 	path := filepath.Join(d.fullpath, name)
 
-	attrs, err := d.mng.getRawAttrs(path)
+	attrs, err := d.mng.docker.GetPathAttrs(path)
 	if errors.As(err, &ErrorNotFound{}) {
 		return nil, syscall.ENOENT
 	}

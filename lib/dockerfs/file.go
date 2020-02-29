@@ -1,13 +1,11 @@
 package dockerfs
 
 import (
-	"archive/tar"
 	"context"
 	"errors"
 	"io/ioutil"
 	"log"
 	"syscall"
-	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -32,7 +30,7 @@ type File struct {
 
 func (f *File) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
 	// Fetch file content
-	reader, err := f.mng.getFileArchive(f.fullpath)
+	reader, err := f.mng.docker.GetFile(f.fullpath)
 	if errors.As(err, &ErrorNotFound{}) {
 		return nil, 0, syscall.ENOENT
 	}
@@ -41,12 +39,7 @@ func (f *File) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 		return nil, 0, syscall.EIO
 	}
 	defer reader.Close()
-	tr := tar.NewReader(reader)
-	if _, err := tr.Next(); err != nil {
-		log.Printf("Failed to find file in tar archive: %v", err)
-		return nil, 0, syscall.EIO
-	}
-	data, err := ioutil.ReadAll(tr)
+	data, err := ioutil.ReadAll(reader)
 	if err != nil {
 		log.Printf("Failed to read file from tar archive: %v", err)
 		return nil, 0, syscall.EIO
@@ -79,7 +72,7 @@ func (f *File) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int6
 }
 
 func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	attrs, err := f.mng.getRawAttrs(f.fullpath)
+	attrs, err := f.mng.docker.GetPathAttrs(f.fullpath)
 	if errors.As(err, &ErrorNotFound{}) {
 		return syscall.ENOENT
 	}
@@ -94,10 +87,6 @@ func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 
 	out.Owner.Uid, out.Owner.Gid = f.mng.uid, f.mng.gid
 	return 0
-}
-
-func parseAttrTime(str string) (time.Time, error) {
-	return time.Parse(time.RFC3339Nano, str)
 }
 
 func (f *File) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int64) (uint32, syscall.Errno) {
@@ -123,7 +112,10 @@ func (f *File) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int
 
 func (f *File) Flush(ctx context.Context, fh fs.FileHandle) (res syscall.Errno) {
 	defer log.Printf("[DEBUG] (%v) Flush() = %v", f.fullpath, res)
-	if err := f.mng.saveFile(f.fullpath, f.data); err != nil {
+	if !f.write {
+		return 0
+	}
+	if err := f.mng.docker.SaveFile(f.fullpath, f.data, nil); err != nil {
 		log.Printf("Failed to save file: %v", err)
 		return syscall.EIO
 	}
@@ -132,7 +124,10 @@ func (f *File) Flush(ctx context.Context, fh fs.FileHandle) (res syscall.Errno) 
 
 func (f *File) Fsync(ctx context.Context, fh fs.FileHandle, flags uint32) (res syscall.Errno) {
 	defer log.Printf("[DEBUG] (%v) Fsync() = %v", f.fullpath, res)
-	if err := f.mng.saveFile(f.fullpath, f.data); err != nil {
+	if !f.write {
+		return 0
+	}
+	if err := f.mng.docker.SaveFile(f.fullpath, f.data, nil); err != nil {
 		log.Printf("Failed to save file: %v", err)
 		return syscall.EIO
 	}
