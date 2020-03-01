@@ -38,7 +38,9 @@ To unmount directory interrupt running `docker-fs` process with `CTRL+C`.
 
 - File system is implemented using [GO-FUSE](https://github.com/hanwen/go-fuse) library which implements FUSE (File systems in USEr space) protocol.
 
-- Due to previous point (FUSE) `docker-fs` works on Linux, should work on MacOS, and possibly works somehow in WSL on Windows.
+- Due to previous point (FUSE) `docker-fs` works on Linux, macOS, and possibly works somehow in WSL on Windows.
+
+- macOS users should install [FUSE for macOS](https://osxfuse.github.io/) first.
 
 - Currently docker-fs supports only READ operations over mounted FS. But docker API allows modification on files so possibly it will be made in future.
 
