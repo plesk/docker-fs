@@ -42,7 +42,8 @@ To unmount directory interrupt running `docker-fs` process with `CTRL+C`.
 
 - macOS users should install [FUSE for macOS](https://osxfuse.github.io/) first.
 
-- Currently docker-fs supports only READ operations over mounted FS. But docker API allows modification on files so possibly it will be made in future.
+- Currently docker-fs supports only reading and modification of existing files over mounted FS.
+Creating of new files/directories, setting attributes is going to be done later.
 
 - Directories, regular files and symlinks are well supported. Other types support is in progress.
 
@@ -51,3 +52,15 @@ To unmount directory interrupt running `docker-fs` process with `CTRL+C`.
 ## TODO
 
 - Fix ussie with newly added directories.
+
+- Tests.
+
+- Add read-only mode.
+
+- Option to make absolute symlinks to point on files inside mount directory.
+
+- Caching.
+
+- Mkdir and file crating support.
+
+- Other FS features...
