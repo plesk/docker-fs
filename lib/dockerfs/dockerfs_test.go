@@ -53,7 +53,15 @@ func shutdown() {
 
 func TestFileList(t *testing.T) {
 	expFiles := map[string]bool{
-		"/file1.txt": false,
+		"/file1.txt":      false,
+		"/dir2/file2.txt": false,
+		"/file3.txt":      false,
+		"/dir2/file4.txt": false,
+	}
+	expDirs := map[string]bool{
+		// Root dir
+		"":      false,
+		"/dir2": false,
 	}
 
 	err := filepath.Walk(mountPoint, func(file string, fi os.FileInfo, err error) error {
@@ -66,9 +74,16 @@ func TestFileList(t *testing.T) {
 		if !fi.IsDir() {
 			// Regular file
 			if _, ok := expFiles[file]; !ok {
-				t.Errorf("Unexpected regular file found %q", file)
+				t.Errorf("Unexpected regular file found: %q", file)
 			} else {
 				expFiles[file] = true
+			}
+		} else {
+			// Directory
+			if _, ok := expDirs[file]; !ok {
+				t.Errorf("Unexpected directory found: %q", file)
+			} else {
+				expDirs[file] = true
 			}
 		}
 		return nil
@@ -78,19 +93,35 @@ func TestFileList(t *testing.T) {
 	}
 	for file, found := range expFiles {
 		if !found {
-			t.Errorf("File not found %q", file)
+			t.Errorf("File not found: %q", file)
+		}
+	}
+	for dir, found := range expDirs {
+		if !found {
+			t.Errorf("Directory not found: %q", dir)
 		}
 	}
 }
 
 func TestReadRegularFile(t *testing.T) {
-	file := filepath.Join(mountPoint, "file1.txt")
-	content, err := ioutil.ReadFile(file)
-	if err != nil {
-		t.Fatalf("ReadFile(%q) failed: %v", file, err)
+	testdata := []struct {
+		path, content string
+	}{
+		{"file1.txt", "file1\n"},
+		{"dir2/file2.txt", "file2\n"},
+		{"file3.txt", "file3\n"},
+		{"dir2/file4.txt", "file4\n"},
 	}
-	exp := "file1\n"
-	if act := string(content); act != exp {
-		t.Errorf("Incorrect file content: expected %q, actual %q", exp, act)
+	for _, test := range testdata {
+		t.Run(test.path, func(t *testing.T) {
+			file := filepath.Join(mountPoint, test.path)
+			content, err := ioutil.ReadFile(file)
+			if err != nil {
+				t.Fatalf("ReadFile(%q) failed: %v", file, err)
+			}
+			if act, exp := string(content), test.content; act != exp {
+				t.Errorf("Incorrect file content: expected %q, actual %q", exp, act)
+			}
+		})
 	}
 }

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 type dockerMngMock struct {
@@ -30,6 +30,11 @@ func newDockerMngMock() *dockerMngMock {
 	}
 }
 
+const (
+	suffixAdded   = ".added"
+	suffixRemoved = ".removed"
+)
+
 func (d *dockerMngMock) ContainerExport() (io.ReadCloser, error) {
 	buffer := &bytes.Buffer{}
 	tw := tar.NewWriter(buffer)
@@ -37,12 +42,20 @@ func (d *dockerMngMock) ContainerExport() (io.ReadCloser, error) {
 		if err != nil {
 			return err
 		}
+		if strings.HasSuffix(file, suffixAdded) {
+			// skip "added" files
+			return nil
+		}
+
+		// strip ".removed" suffix if present
+		file = strings.TrimSuffix(file, suffixRemoved)
+
 		name := file[len(d.root):]
 		if name == "" {
+			// skip root
 			return nil
 		}
 		name = "." + name
-		log.Printf("dockerMngMock: Add file to archive: %q", name)
 		// generate tar header
 		header, err := tar.FileInfoHeader(fi, name)
 		if err != nil {
@@ -78,8 +91,13 @@ func (d *dockerMngMock) ContainerExport() (io.ReadCloser, error) {
 	return ioutil.NopCloser(buffer), nil
 }
 
-func (d *dockerMngMock) GetPathAttrs(path string) (*ContainerPathStat, error) {
-	fi, err := os.Lstat(filepath.Join(d.root, path))
+func (d *dockerMngMock) GetPathAttrs(path string) (st *ContainerPathStat, err error) {
+	fullpath := filepath.Join(d.root, path)
+	if _, err := os.Lstat(fullpath + suffixAdded); err == nil {
+		fullpath += suffixAdded
+	}
+
+	fi, err := os.Lstat(fullpath)
 	if os.IsNotExist(err) {
 		return nil, ErrorNotFound{}
 	}
@@ -95,14 +113,38 @@ func (d *dockerMngMock) GetPathAttrs(path string) (*ContainerPathStat, error) {
 	}, nil
 }
 
-func (d *dockerMngMock) GetFsChanges() (FsChanges, error) {
-	// TODO
-	return nil, nil
+func (d *dockerMngMock) GetFsChanges() (changes FsChanges, err error) {
+	err = filepath.Walk(d.root, func(file string, fi os.FileInfo, err error) error {
+		file = file[len(d.root):]
+		if file == "" {
+			return nil
+		}
+		if strings.HasSuffix(file, suffixAdded) {
+			file = strings.TrimSuffix(file, suffixAdded)
+			changes = append(changes, FsChange{
+				Path: file,
+				Kind: FileAdded,
+				mode: uint32(fi.Mode()),
+			})
+		} else if strings.HasSuffix(file, suffixRemoved) {
+			file = strings.TrimSuffix(file, suffixRemoved)
+			changes = append(changes, FsChange{
+				Path: file,
+				Kind: FileRemoved,
+			})
+		}
+		return nil
+	})
+	return changes, err
 }
 
 // Get plain file content
 func (d *dockerMngMock) GetFile(path string) (io.ReadCloser, error) {
-	f, err := os.Open(filepath.Join(d.root, path))
+	fullpath := filepath.Join(d.root, path)
+	if _, err := os.Lstat(fullpath + suffixAdded); err == nil {
+		fullpath += suffixAdded
+	}
+	f, err := os.Open(fullpath)
 	if os.IsNotExist(err) {
 		return nil, ErrorNotFound{}
 	}
