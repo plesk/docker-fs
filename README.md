@@ -1,5 +1,8 @@
 # Docker-fs.
 
+![Go](https://github.com/plesk/docker-fs/workflows/Go/badge.svg)
+[![Coverage Status](https://coveralls.io/repos/github/plesk/docker-fs/badge.svg?branch=master)](https://coveralls.io/github/plesk/docker-fs?branch=master)
+
 Mounts your docker container FS into a local directory.
 
 ## Build
