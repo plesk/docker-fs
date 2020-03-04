@@ -29,7 +29,13 @@ func main() {
 	for {
 		now := time.Now()
 		name := now.Format("15-04")
-		logfile := filepath.Join(logdir, fmt.Sprintf("log.%v.txt", name))
+		d := filepath.Join(logdir, name)
+		if err := os.MkdirAll(d, 0755); err != nil {
+			log.Print(err)
+			time.Sleep(10 * time.Second)
+			continue
+		}
+		logfile := filepath.Join(d, fmt.Sprintf("log.%v.txt", name))
 		content := readContent(contentFile)
 		func() {
 			f, err := os.OpenFile(logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)

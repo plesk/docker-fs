@@ -92,9 +92,18 @@ func (d *dockerMngMock) ContainerExport() (io.ReadCloser, error) {
 }
 
 func (d *dockerMngMock) GetPathAttrs(path string) (st *ContainerPathStat, err error) {
+	// Check if file was added
 	fullpath := filepath.Join(d.root, path)
 	if _, err := os.Lstat(fullpath + suffixAdded); err == nil {
 		fullpath += suffixAdded
+	}
+
+	// Check if file was added along with the directory
+	dr, fl := filepath.Split(fullpath)
+	dr = dr[:len(dr)-1]
+	fp := filepath.Join(dr+suffixAdded, fl+suffixAdded)
+	if _, err := os.Lstat(fp); err == nil {
+		fullpath = fp
 	}
 
 	fi, err := os.Lstat(fullpath)
@@ -115,16 +124,19 @@ func (d *dockerMngMock) GetPathAttrs(path string) (st *ContainerPathStat, err er
 
 func (d *dockerMngMock) GetFsChanges() (changes FsChanges, err error) {
 	err = filepath.Walk(d.root, func(file string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
 		file = file[len(d.root):]
 		if file == "" {
 			return nil
 		}
 		if strings.HasSuffix(file, suffixAdded) {
-			file = strings.TrimSuffix(file, suffixAdded)
+			dr, fl := filepath.Split(file)
+			file := filepath.Join(strings.TrimSuffix(dr, suffixAdded+"/"), strings.TrimSuffix(fl, suffixAdded))
 			changes = append(changes, FsChange{
 				Path: file,
 				Kind: FileAdded,
-				mode: uint32(fi.Mode()),
 			})
 		} else if strings.HasSuffix(file, suffixRemoved) {
 			file = strings.TrimSuffix(file, suffixRemoved)
@@ -140,10 +152,20 @@ func (d *dockerMngMock) GetFsChanges() (changes FsChanges, err error) {
 
 // Get plain file content
 func (d *dockerMngMock) GetFile(path string) (io.ReadCloser, error) {
+	// Check if file was added
 	fullpath := filepath.Join(d.root, path)
 	if _, err := os.Lstat(fullpath + suffixAdded); err == nil {
 		fullpath += suffixAdded
 	}
+
+	// Check if file was added along with the directory
+	dr, fl := filepath.Split(fullpath)
+	dr = dr[:len(dr)-1]
+	fp := filepath.Join(dr+suffixAdded, fl+suffixAdded)
+	if _, err := os.Lstat(fp); err == nil {
+		fullpath = fp
+	}
+
 	f, err := os.Open(fullpath)
 	if os.IsNotExist(err) {
 		return nil, ErrorNotFound{}

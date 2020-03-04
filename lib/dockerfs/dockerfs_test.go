@@ -57,11 +57,13 @@ func TestFileList(t *testing.T) {
 		"/dir2/file2.txt": false,
 		"/file3.txt":      false,
 		"/dir2/file4.txt": false,
+		"/dir3/file5.txt": false,
 	}
 	expDirs := map[string]bool{
 		// Root dir
 		"":      false,
 		"/dir2": false,
+		"/dir3": false,
 	}
 
 	err := filepath.Walk(mountPoint, func(file string, fi os.FileInfo, err error) error {
@@ -111,6 +113,7 @@ func TestReadRegularFile(t *testing.T) {
 		{"dir2/file2.txt", "file2\n"},
 		{"file3.txt", "file3\n"},
 		{"dir2/file4.txt", "file4\n"},
+		{"dir3/file5.txt", "file5\n"},
 	}
 	for _, test := range testdata {
 		t.Run(test.path, func(t *testing.T) {
