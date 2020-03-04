@@ -1,4 +1,4 @@
-module docker-fs
+module github.com/plesk/docker-fs
 
 go 1.13
 

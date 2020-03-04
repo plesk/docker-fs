@@ -1,13 +1,14 @@
 package main
 
 import (
-	"docker-fs/lib/dockerfs"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/plesk/docker-fs/lib/dockerfs"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
