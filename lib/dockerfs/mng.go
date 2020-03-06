@@ -5,11 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/plesk/docker-fs/lib/log"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 )
@@ -54,13 +55,13 @@ func (m *Mng) Init() (err error) {
 		m.docker = NewDockerMng(httpc, m.id)
 	}
 
-	log.Printf("[DEBUG] fetching container content...")
+	log.Printf("[debug] fetching container content...")
 	archPath, err := m.fetchContainerArchive()
 	if err != nil {
 		return err
 	}
 	defer os.Remove(archPath)
-	log.Printf("[DEBUG] parse container content...")
+	log.Printf("[debug] parse container content...")
 	m.staticFiles, err = parseContainterContent(archPath)
 	return err
 }
@@ -121,7 +122,7 @@ func parseContainterContent(file string) (map[string]os.FileMode, error) {
 			break
 		}
 		if err != nil {
-			log.Printf("Add: %v", err)
+			log.Printf("[debug] Add: %v", err)
 			// XXX handle error
 			break
 		}
@@ -163,7 +164,7 @@ func (m *Mng) ChangesInDir(dir string) (result FsChanges, err error) {
 		stat, err := m.docker.GetPathAttrs(change.Path)
 		if err != nil {
 			if !errors.As(err, &ErrorNotFound{}) {
-				log.Printf("[ERR] Failed to get raw attrs of %q: %v", change.Path, err)
+				log.Printf("[error] Failed to get raw attrs of %q: %v", change.Path, err)
 			}
 			continue
 		}

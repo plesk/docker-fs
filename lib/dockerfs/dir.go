@@ -3,11 +3,12 @@ package dockerfs
 import (
 	"context"
 	"errors"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/plesk/docker-fs/lib/log"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -24,15 +25,16 @@ type Dir struct {
 	fullpath string
 }
 
-func (d *Dir) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+func (d *Dir) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) (err syscall.Errno) {
+	defer log.Printf("[debug] Dir (%s) Getattr(): %v", d.fullpath, err)
 	out.Owner.Uid = d.mng.uid
 	out.Owner.Gid = d.mng.gid
 	out.Mode = 0755
 	return 0
 }
 
-func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	log.Printf("[DEBUG] (%s) Lookup(%s)...", d.fullpath, name)
+func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (n *fs.Inode, syserr syscall.Errno) {
+	defer log.Printf("[debug] Dir (%s) Lookup(%s): %v", d.fullpath, name, syserr)
 	path := filepath.Join(d.fullpath, name)
 
 	attrs, err := d.mng.docker.GetPathAttrs(path)
@@ -40,11 +42,11 @@ func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.
 		return nil, syscall.ENOENT
 	}
 	if err != nil {
-		log.Printf("Failed to get raw attrs: %v, (%T)", err, err)
+		log.Printf("[error] Failed to get raw attrs: %v, (%T)", err, err)
 		return nil, syscall.EIO
 	}
 	mode := attrs.Mode
-	log.Printf("[DEBUG] (%s) Lookup(%s): mode = %o", d.fullpath, name, mode)
+	log.Printf("[trace] (%s) Lookup(%s): mode = %o", d.fullpath, name, mode)
 
 	out.Owner.Uid, out.Owner.Gid = d.mng.uid, d.mng.gid
 
@@ -61,8 +63,8 @@ func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.
 	return d.NewPersistentInode(ctx, &File{mng: d.mng, fullpath: path}, fs.StableAttr{Ino: inode}), 0
 }
 
-func (d *Dir) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
-	log.Printf("[DEBUG] (%s) Readdir()...", d.fullpath)
+func (d *Dir) Readdir(ctx context.Context) (ds fs.DirStream, syserr syscall.Errno) {
+	defer log.Printf("[debug] Dir (%s) Readdir(): %v", d.fullpath, syserr)
 	children := make(map[string]uint32)
 	path := d.fullpath
 	if path != "/" {
@@ -71,7 +73,7 @@ func (d *Dir) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 
 	changes, err := d.mng.ChangesInDir(d.fullpath)
 	if err != nil {
-		log.Printf("[ERR] Cannot retrieve FS changes: %v", err)
+		log.Printf("[error] Cannot retrieve FS changes: %v", err)
 		return nil, syscall.EIO
 	}
 
@@ -87,10 +89,10 @@ func (d *Dir) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		sub := name[len(path):]
 		pos := strings.Index(sub, "/")
 		if pos > 0 {
-			log.Printf("[DEBUG] Readdir (1): children[%v] = %o", sub[:pos], fuse.S_IFDIR)
+			log.Printf("[trace] Readdir (1): children[%v] = %o", sub[:pos], fuse.S_IFDIR)
 			children[sub[:pos]] = fuse.S_IFDIR
 		} else if pos < 0 {
-			log.Printf("[DEBUG] Readdir (2): children[%v] = %o", sub, uint32(mode))
+			log.Printf("[trace] Readdir (2): children[%v] = %o", sub, uint32(mode))
 			if (mode & fuse.S_IFLNK) == fuse.S_IFLNK {
 				children[sub] = fuse.S_IFLNK
 			} else {
@@ -104,7 +106,7 @@ func (d *Dir) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		if ch.Kind != FileAdded {
 			continue
 		}
-		log.Printf("[DEBUG] Readdir (3): childred[%v] = %o", filepath.Base(ch.Path), ch.mode)
+		log.Printf("[trace] Readdir (3): childred[%v] = %o", filepath.Base(ch.Path), ch.mode)
 		fuseMode := uint32(fuse.S_IFREG)
 		if os.FileMode(ch.mode).IsDir() {
 			fuseMode = fuse.S_IFDIR

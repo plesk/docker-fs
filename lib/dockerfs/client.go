@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"strings"
+
+	log "github.com/plesk/docker-fs/lib/log"
 )
 
 type httpClient interface {
@@ -28,7 +29,7 @@ func NewClient(addr string) (*clientImpl, error) {
 	unixPrefix := "unix:"
 	if strings.HasPrefix(addr, unixPrefix) {
 		addr = addr[len(unixPrefix):]
-		log.Printf("httpClient: using unix socket %q", addr)
+		log.Printf("[info] httpClient: using unix socket %q", addr)
 		return &clientImpl{
 			addr: "http://unix",
 			cl: &http.Client{
@@ -41,6 +42,7 @@ func NewClient(addr string) (*clientImpl, error) {
 			},
 		}, nil
 	}
+	// TODO add http socket support
 	return nil, fmt.Errorf("Unsupported protocol for address: %q", addr)
 }
 

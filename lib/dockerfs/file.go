@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"io/ioutil"
-	"log"
 	"syscall"
+
+	"github.com/plesk/docker-fs/lib/log"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -28,42 +29,48 @@ type File struct {
 	pos         int64
 }
 
-func (f *File) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+func (f *File) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, mode uint32, syserr syscall.Errno) {
+	defer log.Printf("[debug] File (%s) Open(%o): %v", f.fullpath, flags, syserr)
 	// Fetch file content
 	reader, err := f.mng.docker.GetFile(f.fullpath)
 	if errors.As(err, &ErrorNotFound{}) {
 		return nil, 0, syscall.ENOENT
 	}
 	if err != nil {
-		log.Printf("Failed to get file archive: %v", err)
+		log.Printf("[error] Failed to get file archive for %q: %v", f.fullpath, err)
 		return nil, 0, syscall.EIO
 	}
 	defer reader.Close()
 	data, err := ioutil.ReadAll(reader)
 	if err != nil {
-		log.Printf("Failed to read file from tar archive: %v", err)
+		log.Printf("[error] Failed to read file from tar archive for %q: %v", f.fullpath, err)
 		return nil, 0, syscall.EIO
 	}
 	f.data = data
 
 	// check flags
 	if (flags&syscall.O_RDONLY) == syscall.O_RDONLY || (flags&syscall.O_RDWR) == syscall.O_RDWR {
+		log.Printf("[trace] File (%s) read", f.fullpath)
 		f.read = true
 	}
 	if (flags&syscall.O_WRONLY) == syscall.O_WRONLY || (flags&syscall.O_RDWR) == syscall.O_RDWR {
+		log.Printf("[trace] File (%s) write", f.fullpath)
 		f.write = true
 	}
 	if (flags & syscall.O_APPEND) == syscall.O_APPEND {
+		log.Printf("[trace] File (%s) append", f.fullpath)
 		f.pos = int64(len(f.data))
 	}
 	if (flags & syscall.O_TRUNC) == syscall.O_TRUNC {
+		log.Printf("[trace] File (%s) truncate", f.fullpath)
 		f.data = f.data[:0]
 	}
 	return nil, 0, 0
 }
 
 // Read simply returns the data that was already unpacked in the Open call
-func (f *File) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
+func (f *File) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (result fuse.ReadResult, syserr syscall.Errno) {
+	defer log.Printf("[debug] File (%s) Read(%d bytes, offset = %d): %v, %v", f.fullpath, len(dest), off, result, syserr)
 	end := int(off) + len(dest)
 	if end > len(f.data) {
 		end = len(f.data)
@@ -71,13 +78,14 @@ func (f *File) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int6
 	return fuse.ReadResultData(f.data[off:end]), 0
 }
 
-func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) (syserr syscall.Errno) {
+	defer log.Printf("[debug] File (%s) Getattr(): %v", f.fullpath, syserr)
 	attrs, err := f.mng.docker.GetPathAttrs(f.fullpath)
 	if errors.As(err, &ErrorNotFound{}) {
 		return syscall.ENOENT
 	}
 	if err != nil {
-		log.Printf("get raw attrs on %q failed: %v (%T)", f.fullpath, err, err)
+		log.Printf("[error] File(%s) Getting raw attrs failed: %v (%T)", f.fullpath, err, err)
 		return syscall.EIO
 	}
 	out.Mode = uint32(attrs.Mode) & 07777
@@ -89,7 +97,8 @@ func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 	return 0
 }
 
-func (f *File) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int64) (uint32, syscall.Errno) {
+func (f *File) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int64) (n uint32, syserr syscall.Errno) {
+	defer log.Printf("[debug] File (%s) Write(%d bytes, offset = %d): %d, %v", f.fullpath, len(data), off, n, syserr)
 	if !f.write {
 		return 0, syscall.EBADF
 	}
@@ -110,27 +119,30 @@ func (f *File) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int
 	return uint32(len(data)), 0
 }
 
+// On closing file
 func (f *File) Flush(ctx context.Context, fh fs.FileHandle) (res syscall.Errno) {
-	defer log.Printf("[DEBUG] (%v) Flush() = %v", f.fullpath, res)
+	defer log.Printf("[debug] File (%v) Flush() = %v", f.fullpath, res)
 	if !f.write {
 		return 0
 	}
 	if err := f.mng.docker.SaveFile(f.fullpath, f.data, nil); err != nil {
-		log.Printf("Failed to save file: %v", err)
+		log.Printf("[error] Failed to save file: %v", err)
 		return syscall.EIO
 	}
+	// reset/free memory
+	f.data = nil
+	f.read, f.write = false, false
 	return 0
 }
 
 func (f *File) Fsync(ctx context.Context, fh fs.FileHandle, flags uint32) (res syscall.Errno) {
-	defer log.Printf("[DEBUG] (%v) Fsync() = %v", f.fullpath, res)
+	defer log.Printf("[debug] File (%v) Fsync() = %v", f.fullpath, res)
 	if !f.write {
 		return 0
 	}
 	if err := f.mng.docker.SaveFile(f.fullpath, f.data, nil); err != nil {
-		log.Printf("Failed to save file: %v", err)
+		log.Printf("[error] Failed to save file: %v", err)
 		return syscall.EIO
 	}
-	// Maybe reset read/write flags?
 	return 0
 }
