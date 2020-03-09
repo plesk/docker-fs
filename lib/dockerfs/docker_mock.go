@@ -176,7 +176,8 @@ func (d *dockerMngMock) GetFile(path string) (io.ReadCloser, error) {
 // Save file
 func (d *dockerMngMock) SaveFile(path string, data []byte, stat *ContainerPathStat) (err error) {
 	// Only modification is supported at the moment
-	f, err := os.OpenFile("notes.txt", os.O_WRONLY|os.O_TRUNC, 0644)
+	fullpath := filepath.Join(d.root, path)
+	f, err := os.OpenFile(fullpath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}

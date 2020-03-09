@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/plesk/docker-fs/lib/log"
+
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
@@ -21,6 +23,7 @@ func TestMain(m *testing.M) {
 var (
 	server     *fuse.Server
 	mountPoint string
+	dockerMock *dockerMngMock
 )
 
 func setup() {
@@ -31,7 +34,8 @@ func setup() {
 	mountPoint = dir
 
 	mng := NewMng("0001")
-	mng.docker = newDockerMngMock()
+	dockerMock = newDockerMngMock()
+	mng.docker = dockerMock
 	if err := mng.Init(); err != nil {
 		panic(fmt.Errorf("mng.Init() failed: %v", err))
 	}
@@ -40,6 +44,8 @@ func setup() {
 	if err != nil {
 		panic(fmt.Errorf("fs.Mount(...) failed: %v", err))
 	}
+
+	log.Level = log.Debug
 }
 
 func shutdown() {
@@ -126,5 +132,29 @@ func TestReadRegularFile(t *testing.T) {
 				t.Errorf("Incorrect file content: expected %q, actual %q", exp, act)
 			}
 		})
+	}
+}
+
+func TestCreateWriteRegularFile(t *testing.T) {
+	name := "new_file6.txt"
+	path := filepath.Join(mountPoint, name)
+	testdata := []byte("some regular file content\n")
+	mode := os.FileMode(0640)
+	if err := ioutil.WriteFile(path, testdata, mode); err != nil {
+		t.Errorf("ioutil.WriteFile(%q) failed: %v", path, err)
+	}
+
+	readData, err := ioutil.ReadFile(path)
+	if err != nil {
+		t.Errorf("ioutil.ReadFile(%q) failed: %v", path, err)
+	}
+
+	if act, exp := string(readData), string(testdata); act != exp {
+		t.Errorf("Incorrect data read: expected %q, actual %q", exp, act)
+	}
+
+	// Cleanup
+	if err := os.Remove(filepath.Join(dockerMock.root, name)); err != nil {
+		t.Errorf("Cleanup failed: %v", err)
 	}
 }

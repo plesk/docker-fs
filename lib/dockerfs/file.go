@@ -27,6 +27,7 @@ type File struct {
 	data        []byte
 	read, write bool
 	pos         int64
+	stat        *ContainerPathStat
 }
 
 func (f *File) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, mode uint32, syserr syscall.Errno) {
@@ -47,6 +48,18 @@ func (f *File) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, mode u
 		return nil, 0, syscall.EIO
 	}
 	f.data = data
+
+	// load mode
+	// TODO make a single API call to retrieve file content and attributes
+	attrs, err := f.mng.docker.GetPathAttrs(f.fullpath)
+	if errors.As(err, &ErrorNotFound{}) {
+		return nil, 0, syscall.ENOENT
+	}
+	if err != nil {
+		log.Printf("[error] Failed to get file attributes for %q: %v", f.fullpath, err)
+		return nil, 0, syscall.EIO
+	}
+	f.stat = attrs
 
 	// check flags
 	if (flags&syscall.O_RDONLY) == syscall.O_RDONLY || (flags&syscall.O_RDWR) == syscall.O_RDWR {
@@ -125,7 +138,7 @@ func (f *File) Flush(ctx context.Context, fh fs.FileHandle) (res syscall.Errno) 
 	if !f.write {
 		return 0
 	}
-	if err := f.mng.docker.SaveFile(f.fullpath, f.data, nil); err != nil {
+	if err := f.mng.docker.SaveFile(f.fullpath, f.data, f.stat); err != nil {
 		log.Printf("[error] Failed to save file: %v", err)
 		return syscall.EIO
 	}
@@ -140,7 +153,7 @@ func (f *File) Fsync(ctx context.Context, fh fs.FileHandle, flags uint32) (res s
 	if !f.write {
 		return 0
 	}
-	if err := f.mng.docker.SaveFile(f.fullpath, f.data, nil); err != nil {
+	if err := f.mng.docker.SaveFile(f.fullpath, f.data, f.stat); err != nil {
 		log.Printf("[error] Failed to save file: %v", err)
 		return syscall.EIO
 	}

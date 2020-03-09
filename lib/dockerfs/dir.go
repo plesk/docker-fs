@@ -17,6 +17,7 @@ import (
 var _ = (fs.NodeGetattrer)((*Dir)(nil))
 var _ = (fs.NodeLookuper)((*Dir)(nil))
 var _ = (fs.NodeReaddirer)((*Dir)(nil))
+var _ = (fs.NodeCreater)((*Dir)(nil))
 
 type Dir struct {
 	fs.Inode
@@ -61,6 +62,39 @@ func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (n *f
 	}
 
 	return d.NewPersistentInode(ctx, &File{mng: d.mng, fullpath: path}, fs.StableAttr{Ino: inode}), 0
+}
+
+func (d *Dir) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	defer log.Printf("[debug] Dir (%s) Create(%q, flags=%o, mode=%o, ...): %v", d.fullpath, name, flags, mode, errno)
+	path := filepath.Join(d.fullpath, name)
+	// check if file exist
+	_, syserr := d.Lookup(ctx, name, &fuse.EntryOut{})
+	if syserr == 0 {
+		// file already exist
+		log.Printf("[error] File %q already exist", path)
+		errno = syscall.EEXIST
+		return
+	}
+	if syserr != syscall.ENOENT {
+		log.Printf("[error] Lookup %q failed: %v", path, syserr)
+		errno = syserr
+		return
+	}
+
+	f := &File{
+		mng:      d.mng,
+		fullpath: path,
+		// Allow fsync on this file
+		write: true,
+		stat: &ContainerPathStat{
+			Mode: os.FileMode(mode),
+		},
+	}
+
+	inode := d.mng.inodes.Inode(filepath.Clean(path))
+
+	node = d.NewPersistentInode(ctx, f, fs.StableAttr{Ino: inode})
+	return
 }
 
 func (d *Dir) Readdir(ctx context.Context) (ds fs.DirStream, syserr syscall.Errno) {
