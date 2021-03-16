@@ -184,3 +184,7 @@ func (d *dockerMngMock) SaveFile(path string, data []byte, stat *ContainerPathSt
 	_, err = f.Write(data)
 	return err
 }
+
+func (d *dockerMngMock) ContainersList() ([]Container, error) {
+	return nil, nil
+}
