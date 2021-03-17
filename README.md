@@ -67,3 +67,7 @@ Creating of new files/directories, setting attributes is going to be done later.
 - Mkdir and file crating support.
 
 - Other FS features...
+
+- Daemonization
+
+- 

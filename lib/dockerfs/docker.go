@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,9 @@ type dockerMng interface {
 
 	// Save file
 	SaveFile(path string, data []byte, stat *ContainerPathStat) (err error)
+
+	// List containers
+	ContainersList() ([]Container, error)
 }
 
 var _ = (dockerMng)((*dockerMngImpl)(nil))
@@ -98,6 +102,24 @@ func (d *dockerMngImpl) GetFile(path string) (io.ReadCloser, error) {
 			return resp.Body.Close()
 		},
 	}, nil
+}
+
+func (d *dockerMngImpl) ContainersList() ([]Container, error) {
+	url := "/containers/json"
+	resp, err := d.httpc.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("Get request to %q failed: %w", url, err)
+	}
+	defer resp.Body.Close()
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var cts []Container
+	if err := json.Unmarshal(data, &cts); err != nil {
+		return nil, err
+	}
+	return cts, nil
 }
 
 type readCloser struct {

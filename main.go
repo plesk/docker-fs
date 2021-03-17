@@ -4,14 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/plesk/docker-fs/lib/log"
+	"github.com/plesk/docker-fs/lib/tui"
 
-	"github.com/plesk/docker-fs/lib/dockerfs"
+	"github.com/plesk/docker-fs/lib/manager"
 
-	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
@@ -25,6 +23,8 @@ var (
 	//
 	dockerSocketAddr string
 
+	daemonize bool
+
 	logLevel       string
 	verbose, quiet bool
 )
@@ -35,6 +35,9 @@ func init() {
 
 	flag.StringVar(&mountPoint, "mount", "", "Mount point for containter FS")
 	flag.StringVar(&mountPoint, "m", "", "Mount point for containter FS")
+
+	flag.BoolVar(&daemonize, "daemonize", false, "Daemonize fuse process")
+	flag.BoolVar(&daemonize, "d", false, "Daemonize fuse process")
 
 	// TODO make http support
 	flag.StringVar(&dockerSocketAddr, "docker-socket", "/var/run/docker.sock", "Docker socket")
@@ -49,16 +52,17 @@ func init() {
 func main() {
 	flag.Parse()
 
-	if containerId == "" {
-		fmt.Fprintf(os.Stderr, "Container id is not specified.\n")
-		flag.Usage()
-		os.Exit(2)
-	}
-
-	if mountPoint == "" {
-		fmt.Fprintf(os.Stderr, "Mount point is not specified.\n")
-		flag.Usage()
-		os.Exit(2)
+	if containerId != "" {
+		if mountPoint == "" {
+			fmt.Fprintf(os.Stderr, "Mount point is not specified.\n")
+			flag.Usage()
+			os.Exit(2)
+		}
+		mng := manager.New()
+		if err := mng.MountContainer(containerId, mountPoint, daemonize); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 
 	if verbose && quiet {
@@ -76,34 +80,12 @@ func main() {
 		log.Printf("[warning] cannot set log level: %q (%v)", logLevel, err)
 	}
 
-	log.Printf("[info] Check if mount directory exists (%v)...", mountPoint)
-	if err := os.MkdirAll(mountPoint, 0755); err != nil {
+	mng := manager.New()
+	ui := tui.NewTui(mng)
+
+	if err := ui.Run(tui.List); err != nil {
 		log.Fatal(err)
 	}
-
-	log.Printf("[info] Fetching content of container %v...", containerId)
-	dockerMng := dockerfs.NewMng(containerId)
-	if err := dockerMng.Init(); err != nil {
-		log.Fatalf("dockerMng.Init() failed: %v", err)
-	}
-
-	root := dockerMng.Root()
-
-	log.Printf("Mounting FS to %v...", mountPoint)
-	server, err := fs.Mount(mountPoint, root, &fs.Options{})
-	if err != nil {
-		log.Fatalf("Mount failed: %v", err)
-	}
-
-	log.Printf("[info] Setting up signal handler...")
-	osSignalChannel := make(chan os.Signal, 1)
-	signal.Notify(osSignalChannel, syscall.SIGTERM, syscall.SIGINT)
-	go shutdown(server, osSignalChannel)
-
-	log.Printf("OK!")
-	log.Printf("Press CTRL-C to unmount docker FS")
-	server.Wait()
-	log.Printf("[info] Server finished.")
 }
 
 func shutdown(server *fuse.Server, signals <-chan os.Signal) {
