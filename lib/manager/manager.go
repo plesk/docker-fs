@@ -6,13 +6,16 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/plesk/docker-fs/lib/log"
 
 	"github.com/plesk/docker-fs/lib/dockerfs"
 
 	"github.com/hanwen/go-fuse/v2/fs"
+	"github.com/hanwen/go-fuse/v2/fuse"
 
 	daemon "github.com/sevlyar/go-daemon"
 )
@@ -58,7 +61,23 @@ func (m *Manager) ListContainers() ([]Container, error) {
 	return result, nil
 }
 
-func (m *Manager) MountContainer(containerId, mountPoint string) error {
+func (m *Manager) MountContainer(containerId, mountPoint string, daemonize bool) error {
+	if err := m.writeStatus(containerId, mountPoint); err != nil {
+		return err
+	}
+
+	if daemonize {
+		ctx := daemon.Context{}
+		child, err := ctx.Reborn()
+		if err != nil {
+			return fmt.Errorf("Daemonization failed: %w", err)
+		}
+		if child != nil {
+			// parent process
+			return nil
+		}
+	}
+
 	log.Printf("[info] Check if mount directory exists (%v)...", mountPoint)
 	if err := os.MkdirAll(mountPoint, 0755); err != nil {
 		return err
@@ -71,35 +90,22 @@ func (m *Manager) MountContainer(containerId, mountPoint string) error {
 
 	root := dockerMng.Root()
 
-	log.Printf("Mounting FS to %v...", mountPoint)
+	log.Printf("[info] Mounting FS to %v...", mountPoint)
 	server, err := fs.Mount(mountPoint, root, &fs.Options{})
 	if err != nil {
 		return fmt.Errorf("Mount failed: %w", err)
 	}
 
-	if err := m.writeStatus(containerId, mountPoint); err != nil {
-		return err
-	}
+	log.Printf("[info] Setting up signal handler...")
+	osSignalChannel := make(chan os.Signal, 1)
+	signal.Notify(osSignalChannel, syscall.SIGTERM, syscall.SIGINT)
+	go shutdown(server, osSignalChannel)
 
-	// daemonize
-	ctx := daemon.Context{
-		LogFileName: fmt.Sprintf("/tmp/container-%v.log", containerId),
-	}
-	log.Printf("[warning] writing log to %v", ctx.LogFileName)
-	child, err := ctx.Reborn()
-	if err != nil {
-		return fmt.Errorf("Daemonization failed: %w", err)
-	}
-	if child != nil {
-		// parent process
-		return nil
-	}
-
-	fmt.Println("OK!")
+	log.Printf("[info] OK!")
 	server.Wait()
-	fmt.Println("[info] Server finished.")
+	log.Printf("[info] Server finished.")
 
-	return nil
+	return m.writeStatus(containerId, "")
 }
 
 func (m *Manager) UnmountContainer(id, path string) error {
@@ -146,4 +152,15 @@ func (m *Manager) readStatus() (map[string]string, error) {
 		return nil, err
 	}
 	return status, nil
+}
+
+func shutdown(server *fuse.Server, signals <-chan os.Signal) {
+	<-signals
+	if err := server.Unmount(); err != nil {
+		log.Printf("[warning] server unmount failed: %v", err)
+		os.Exit(1)
+	}
+
+	log.Printf("[info] Unmount successful.")
+	os.Exit(0)
 }

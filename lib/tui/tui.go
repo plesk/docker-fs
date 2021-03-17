@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"log"
+	"os"
+	"os/exec"
 
 	"github.com/manifoldco/promptui"
 	"github.com/plesk/docker-fs/lib/manager"
@@ -83,8 +85,15 @@ func (t *Tui) list() error {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := t.mng.MountContainer(cts[i].Id, mountPoint); err != nil {
-			log.Fatal(err)
+
+		executable, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("Cannot detect executable path: %w", err)
+		}
+
+		cmd := exec.Command(executable, "-id", cts[i].Id, "-mount", mountPoint, "-daemonize")
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("Mount command failed: %w", err)
 		}
 	}
 	return nil

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/plesk/docker-fs/lib/log"
+	"github.com/plesk/docker-fs/lib/tui"
 
 	"github.com/plesk/docker-fs/lib/manager"
 
@@ -22,6 +23,8 @@ var (
 	//
 	dockerSocketAddr string
 
+	daemonize bool
+
 	logLevel       string
 	verbose, quiet bool
 )
@@ -32,6 +35,9 @@ func init() {
 
 	flag.StringVar(&mountPoint, "mount", "", "Mount point for containter FS")
 	flag.StringVar(&mountPoint, "m", "", "Mount point for containter FS")
+
+	flag.BoolVar(&daemonize, "daemonize", false, "Daemonize fuse process")
+	flag.BoolVar(&daemonize, "d", false, "Daemonize fuse process")
 
 	// TODO make http support
 	flag.StringVar(&dockerSocketAddr, "docker-socket", "/var/run/docker.sock", "Docker socket")
@@ -46,16 +52,17 @@ func init() {
 func main() {
 	flag.Parse()
 
-	if containerId == "" {
-		fmt.Fprintf(os.Stderr, "Container id is not specified.\n")
-		flag.Usage()
-		os.Exit(2)
-	}
-
-	if mountPoint == "" {
-		fmt.Fprintf(os.Stderr, "Mount point is not specified.\n")
-		flag.Usage()
-		os.Exit(2)
+	if containerId != "" {
+		if mountPoint == "" {
+			fmt.Fprintf(os.Stderr, "Mount point is not specified.\n")
+			flag.Usage()
+			os.Exit(2)
+		}
+		mng := manager.New()
+		if err := mng.MountContainer(containerId, mountPoint, daemonize); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 
 	if verbose && quiet {
@@ -74,7 +81,9 @@ func main() {
 	}
 
 	mng := manager.New()
-	if err := mng.MountContainer(containerId, mountPoint); err != nil {
+	ui := tui.NewTui(mng)
+
+	if err := ui.Run(tui.List); err != nil {
 		log.Fatal(err)
 	}
 }
