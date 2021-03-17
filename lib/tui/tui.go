@@ -44,7 +44,7 @@ func (t *Tui) list() error {
 	}
 
 	sel := promptui.Select{
-		Label:     "Select container to mount",
+		Label:     "Label",
 		Items:     cts,
 		Templates: listTemplates,
 	}
@@ -56,17 +56,25 @@ func (t *Tui) list() error {
 	if ct.Mounted {
 		// ask to unmount
 		sel := promptui.Select{
-			Label: fmt.Sprintf("Unmount container %v from %v?", ct.ShortId, ct.MountPoint),
+			Label: struct {
+				Id string
+				Mp string
+			}{
+				Id: ct.ShortId,
+				Mp: ct.MountPoint,
+			},
 			Items: []string{
 				"Yes",
 				"No",
 			},
+			Templates: confirmUnmountTemplates,
 		}
 		i, _, err := sel.Run()
 		if err != nil {
 			return err
 		}
 		if i == 1 {
+			// No
 			return nil
 		}
 		// unmounting
